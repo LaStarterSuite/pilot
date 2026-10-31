@@ -46,6 +46,7 @@ class BenchInitializer:
         # server (see MariaDBManager/PostgresManager).
         steps: list[tuple[str, Callable[[], None]]] = [
             ("Validate bench.toml", self.bench.config.validate),
+            ("Check system packages", self._preflight_system_packages),
             ("Ensure admin password", self._ensure_admin_password),
             ("Ensure database credentials", self._ensure_database_credentials),
             ("Install system packages", self._install_system_packages),
@@ -165,6 +166,42 @@ class BenchInitializer:
         from admin.backend.frontend import ensure_admin_frontend
 
         ensure_admin_frontend(on_progress)
+
+    def _preflight_system_packages(self) -> None:
+        """Fail before setup starts when required system packages are missing and
+        Pilot has no privileges to install them, with the exact command for this OS."""
+        from pilot.exceptions import BenchError
+        from pilot.managers.packages import get_package_manager
+
+        pkg = get_package_manager()
+        missing = self._missing_system_packages()
+        if not missing or pkg.has_install_privileges():
+            return
+        raise BenchError(
+            "Missing system packages and no passwordless sudo available to install them.\n"
+            "Install them with:\n"
+            f"  {pkg.get_install_command(*missing)}\n"
+            "Or re-run install.sh as root, which installs every system package Pilot needs. "
+            "Then run this command again."
+        )
+
+    def _missing_system_packages(self) -> list[str]:
+        """Canonical names of the system packages init would install for this bench."""
+        from pilot.managers.redis import RedisManager
+
+        missing: list[str] = []
+        if self.bench.config.db_type == "postgres":
+            manager = self._postgres_manager()
+        elif self.bench.config.db_type != "sqlite":
+            manager = self._mariadb_manager()
+        else:
+            manager = None
+        if manager and not manager.config.existing and not manager.is_installed():
+            missing.append(manager.system_package)
+        redis = RedisManager(self.bench.config.redis, self.bench)
+        if not redis.is_installed():
+            missing.append(redis.system_package)
+        return missing
 
     def _install_system_packages(self) -> None:
         from pilot.managers.environment import PythonEnvManager

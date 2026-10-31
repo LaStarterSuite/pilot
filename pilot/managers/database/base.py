@@ -20,6 +20,11 @@ class UserOwnedDBManager(SystemdUserMixin):
     _BREW_FORMULA_BASE: str = ""
     _DEFAULT_VERSION: str = ""
 
+    @property
+    def system_package(self) -> str:
+        """The Linux distro package that provides this database server."""
+        return self._SYSTEM_PACKAGE
+
     def is_installed(self) -> bool:
         raise NotImplementedError
 

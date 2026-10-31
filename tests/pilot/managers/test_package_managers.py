@@ -165,6 +165,28 @@ def test_install_skips_permission_check_on_macos(monkeypatch) -> None:
     assert run.call_args[0][0] == ["brew", "install", "git"]
 
 
+@pytest.mark.parametrize(
+    ("manager", "expected"),
+    [
+        (AptPackageManager(), "sudo apt-get install -y nginx redis-server"),
+        (DnfPackageManager(), "sudo dnf install -y nginx valkey"),
+        (PacmanPackageManager(), "sudo pacman -S --noconfirm --needed nginx valkey"),
+        (BrewPackageManager(), "brew install nginx redis-server"),
+    ],
+)
+def test_get_install_command_renders_the_native_names(manager, expected) -> None:
+    assert manager.get_install_command("nginx", "redis-server") == expected
+
+
+def test_has_install_privileges_mirrors_the_install_gate(monkeypatch) -> None:
+    monkeypatch.setattr(package_managers, "is_root", lambda: False)
+    monkeypatch.setattr(package_managers, "has_passwordless_sudo", lambda: True)
+    assert AptPackageManager().has_install_privileges() is True
+    monkeypatch.setattr(package_managers, "has_passwordless_sudo", lambda: False)
+    assert AptPackageManager().has_install_privileges() is False
+    assert BrewPackageManager().has_install_privileges() is True
+
+
 # Node.js is installed once by install.sh's root bootstrap now, not per bench
 # init - _install_node only covers macOS (brew); everywhere else it fails loud
 # rather than shelling out to sudo.

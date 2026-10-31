@@ -10,6 +10,9 @@ from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.core.bench.initializer import BenchInitializer
 from pilot.exceptions import BenchError
+from pilot.managers.database import MariaDBManager
+from pilot.managers.packages import AptPackageManager
+from pilot.managers.redis import RedisManager
 from tests.pilot.commands.test_commands import make_bench
 
 
@@ -157,6 +160,7 @@ def _initialize_until_the_virtualenv_fails(bench: Bench) -> None:
         raise BenchError("could not install dependencies")
 
     with (
+        patch.object(BenchInitializer, "_preflight_system_packages"),
         patch.object(BenchInitializer, "_ensure_admin_password"),
         patch.object(BenchInitializer, "_ensure_database_credentials"),
         patch.object(BenchInitializer, "_install_system_packages"),
@@ -256,6 +260,7 @@ def test_init_builds_the_framework_assets(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     initializer = BenchInitializer(bench)
     steps = [
+        "_preflight_system_packages",
         "_ensure_admin_password",
         "_ensure_database_credentials",
         "_install_system_packages",
@@ -283,6 +288,7 @@ def test_init_prepares_the_admin_frontend_only_for_an_enabled_admin(tmp_path: Pa
     bench.config.admin.enabled = admin_enabled
     initializer = BenchInitializer(bench)
     steps = [
+        "_preflight_system_packages",
         "_ensure_admin_password",
         "_ensure_database_credentials",
         "_install_system_packages",
@@ -304,3 +310,48 @@ def test_init_prepares_the_admin_frontend_only_for_an_enabled_admin(tmp_path: Pa
 
     assert mocks["_ensure_admin_frontend"].called is admin_enabled
     mocks["_generate_process_config"].assert_called_once()
+
+
+def test_preflight_names_the_exact_install_command_without_sudo(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    with (
+        patch.object(MariaDBManager, "is_installed", return_value=False),
+        patch.object(RedisManager, "is_installed", return_value=False),
+        patch("pilot.managers.packages.get_package_manager", return_value=AptPackageManager()),
+        patch("pilot.managers.packages.has_passwordless_sudo", return_value=False),
+        patch("pilot.managers.packages.is_root", return_value=False),
+        pytest.raises(BenchError, match=r"sudo apt-get install -y mariadb-server redis-server"),
+    ):
+        BenchInitializer(bench)._preflight_system_packages()
+
+
+def test_preflight_passes_when_sudo_can_install_missing_packages(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    with (
+        patch.object(MariaDBManager, "is_installed", return_value=False),
+        patch.object(RedisManager, "is_installed", return_value=False),
+        patch("pilot.managers.packages.get_package_manager", return_value=AptPackageManager()),
+        patch("pilot.managers.packages.has_passwordless_sudo", return_value=True),
+        patch("pilot.managers.packages.is_root", return_value=False),
+    ):
+        BenchInitializer(bench)._preflight_system_packages()
+
+
+def test_preflight_passes_when_required_packages_are_installed(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    with (
+        patch.object(MariaDBManager, "is_installed", return_value=True),
+        patch.object(RedisManager, "is_installed", return_value=True),
+    ):
+        BenchInitializer(bench)._preflight_system_packages()
+
+
+def test_preflight_skips_the_database_server_for_an_existing_one(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.mariadb.existing = True
+    with (
+        patch.object(MariaDBManager, "is_installed") as mariadb_installed,
+        patch.object(RedisManager, "is_installed", return_value=True),
+    ):
+        BenchInitializer(bench)._preflight_system_packages()
+    mariadb_installed.assert_not_called()
