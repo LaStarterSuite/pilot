@@ -328,6 +328,11 @@ class Bench:
 
         BenchRuntime(self).install_requirements(on_progress)
 
+    def recreate_python_env(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        from pilot.core.bench.runtime import BenchRuntime
+
+        BenchRuntime(self).recreate_python_env(on_progress)
+
     @property
     def supports_lite_mode(self) -> bool:
         """Whether this bench's frappe ships the one process lite mode runs."""
