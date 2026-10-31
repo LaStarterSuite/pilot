@@ -58,12 +58,13 @@ class BenchConfigFiles:
 
     def write_common_site_config(self) -> None:
         redis = self.bench.config.redis
-        redis_cache = f"redis://localhost:{redis.cache_port}"
+        timeouts = "socket_timeout=5&socket_connect_timeout=2"
+        redis_cache = f"redis://localhost:{redis.cache_port}?{timeouts}"
         with update_common_site_config(self.bench.sites_path) as config:
             config.update(
                 {
                     "redis_cache": redis_cache,
-                    "redis_queue": f"redis://localhost:{redis.queue_port}",
+                    "redis_queue": f"redis://localhost:{redis.queue_port}?{timeouts}",
                     "redis_socketio": redis_cache,
                     "socketio_port": self.bench.realtime_port,
                     "webserver_port": self.bench.config.http_port,

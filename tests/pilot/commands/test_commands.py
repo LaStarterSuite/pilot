@@ -1275,7 +1275,8 @@ def test_write_common_site_config_preserves_custom_keys(tmp_path: Path) -> None:
 
     config = json.loads(config_path.read_text())
     assert config["server_script_enabled"] == 1
-    assert config["redis_cache"] == "redis://localhost:13000"
+    assert config["redis_cache"] == ("redis://localhost:13000?socket_timeout=5&socket_connect_timeout=2")
+    assert config["redis_queue"] == ("redis://localhost:11000?socket_timeout=5&socket_connect_timeout=2")
     assert config["webserver_host"] == "127.0.0.1"
 
 
