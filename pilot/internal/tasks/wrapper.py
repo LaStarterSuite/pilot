@@ -210,10 +210,10 @@ def _run_task() -> None:
         store.remove_private_files(task_id, "secrets.json")
 
     status = _finalize_task(store, task_id, exit_code)
-    if status == TaskStatus.FAILED:
-        from pilot.core.notification.events import task_failed
+    if status in (TaskStatus.FAILED, TaskStatus.SUCCESS):
+        from pilot.core.notification import events
 
-        task_failed(bench_root, meta)
+        events.report_task_result(bench_root, meta, status=status)
 
     trigger = trigger_for_task_status(status)
     selected = callbacks.get(trigger)
