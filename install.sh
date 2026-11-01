@@ -58,6 +58,11 @@ detect_distro() {
     case "$distro_id" in
         debian|ubuntu|fedora|arch) echo "$distro_id"; return ;;
     esac
+    # RHEL and its derivatives advertise ID_LIKE=fedora; keep their own ID so
+    # require_supported_release can reject them.
+    case "$distro_id" in
+        rhel|centos|rocky|almalinux|ol) echo "$distro_id"; return ;;
+    esac
     # Derivatives advertise their parent in ID_LIKE (e.g. Mint -> ubuntu).
     for token in $distro_like; do
         case "$token" in
@@ -79,6 +84,9 @@ require_supported_release() {
     # shellcheck disable=SC1090
     major=$(. "$os_release"; echo "${VERSION_ID%%.*}")
     case "$distro_id" in
+        rhel|centos|rocky|almalinux|ol)
+            echo "Pilot does not support $distro_id. Use Ubuntu 24.04+, Debian 12+ or Fedora 43+." >&2
+            exit 1 ;;
         ubuntu) minimum=24; label="Ubuntu 24.04" ;;
         debian) minimum=12; label="Debian 12" ;;
         fedora) minimum=43; label="Fedora 43" ;;
