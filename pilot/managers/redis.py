@@ -54,11 +54,16 @@ class RedisManager:
         match = re.search(r"v=(\S+)", result.stdout)
         return match.group(1) if match else ""
 
+    @property
+    def system_package(self) -> str:
+        """The Linux package that provides the Redis server."""
+        return "redis-server"
+
     def install(self) -> None:
         if self.is_installed():
             return
         package_manager = get_package_manager()
-        package = self._brew_package() if is_macos() else "redis-server"
+        package = self._brew_package() if is_macos() else self.system_package
         package_manager.install(package)
 
     def _brew_package(self) -> str:

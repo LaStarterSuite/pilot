@@ -18,6 +18,7 @@ class SystemPackageManager(ABC):
     # Canonical (Debian/apt) name -> native name(s). Unmapped names pass through.
     package_aliases: ClassVar[dict[str, str | tuple[str, ...]]] = {}
     requires_privilege: ClassVar[bool] = True
+    install_argv: ClassVar[tuple[str, ...]] = ()
 
     def _resolve(self, *packages: str) -> list[str]:
         resolved: list[str] = []
@@ -27,8 +28,17 @@ class SystemPackageManager(ABC):
             resolved.extend(name for name in names if name not in resolved)
         return resolved
 
+    def has_install_privileges(self) -> bool:
+        """True when install() can run without needing a password prompt."""
+        return not self.requires_privilege or is_root() or has_passwordless_sudo()
+
+    def get_install_command(self, *packages: str) -> str:
+        """The shell command that installs these packages on the detected OS."""
+        parts = ["sudo"] if self.requires_privilege else []
+        return " ".join([*parts, *self.install_argv, *self._resolve(*packages)])
+
     def install(self, *packages: str) -> None:
-        if self.requires_privilege and not is_root() and not has_passwordless_sudo():
+        if not self.has_install_privileges():
             names = ", ".join(self._resolve(*packages))
             raise BenchError(
                 f"Required: {names}. No passwordless sudo available. Re-run install.sh as root, "
@@ -50,6 +60,7 @@ class AptPackageManager(SystemPackageManager):
     package_aliases: ClassVar[dict[str, str | tuple[str, ...]]] = {
         "modsecurity-nginx": "libnginx-mod-http-modsecurity",
     }
+    install_argv: ClassVar[tuple[str, ...]] = ("apt-get", "install", "-y")
 
     def _install(self, *packages: str) -> None:
         subprocess.run(
@@ -80,6 +91,7 @@ class DnfPackageManager(SystemPackageManager):
         "postgresql-client": "postgresql",
         "modsecurity-nginx": "nginx-mod-modsecurity",
     }
+    install_argv: ClassVar[tuple[str, ...]] = ("dnf", "install", "-y")
 
     def _install(self, *packages: str) -> None:
         subprocess.run(
@@ -110,6 +122,7 @@ class PacmanPackageManager(SystemPackageManager):
         "postgresql-client": "postgresql",
         "modsecurity-nginx": "nginx-mod-modsecurity",
     }
+    install_argv: ClassVar[tuple[str, ...]] = ("pacman", "-S", "--noconfirm", "--needed")
 
     def _install(self, *packages: str) -> None:
         subprocess.run(
@@ -128,6 +141,7 @@ class PacmanPackageManager(SystemPackageManager):
 
 class BrewPackageManager(SystemPackageManager):
     requires_privilege: ClassVar[bool] = False
+    install_argv: ClassVar[tuple[str, ...]] = ("brew", "install")
 
     def _install(self, *packages: str) -> None:
         subprocess.run(
