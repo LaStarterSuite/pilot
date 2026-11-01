@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -78,6 +79,11 @@ class AdminEnvManager:
         self._ensure_venv()
         self.install_python_deps()
         self._ensure_frontend_deps()
+
+    def recreate(self) -> None:
+        """Delete the venv and rebuild it with the current Python."""
+        shutil.rmtree(self.venv_path, ignore_errors=True)
+        self.ensure()
 
     def _ensure_venv(self) -> bool:
         if self.python.exists():

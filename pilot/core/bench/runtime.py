@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 import time
 from collections.abc import Callable
@@ -154,6 +155,14 @@ class BenchRuntime:
     def install_requirements(self, on_progress: Callable[[str], None]) -> None:
         self._install_python_requirements(on_progress)
         self._install_js_requirements(on_progress)
+
+    def recreate_python_env(self, on_progress: Callable[[str], None]) -> None:
+        """Delete and rebuild the bench venv, then reinstall the apps into it."""
+        shutil.rmtree(self.bench.env_path, ignore_errors=True)
+        from pilot.managers.environment import PythonEnvManager
+
+        PythonEnvManager(self.bench).create_venv()
+        self._install_python_requirements(on_progress)
 
     def _start_development(self, initialized: bool, on_progress: Callable[[str], None]) -> None:
         from pilot.managers.processes.local import ProcessManager

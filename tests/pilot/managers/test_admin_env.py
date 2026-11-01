@@ -103,6 +103,19 @@ def test_dev_build_installs_frontend_deps(tmp_path: Path, uv_runs) -> None:
     assert [call for call in uv_runs.call_args_list if call.args[0][:1] == ["npm"]]
 
 
+def test_recreate_rebuilds_a_venv_whose_deps_look_current(tmp_path: Path, uv_runs) -> None:
+    """An OS upgrade replaced the venv's Python; deletion must force a full reinstall."""
+    _existing_venv(tmp_path)
+    _make_manager(tmp_path)
+    (tmp_path / ".admin-venv" / ".admin-deps").write_text("cowsay")
+    uv_runs.reset_mock()
+
+    _make_manager(tmp_path).recreate()
+
+    installed = [call.args[0] for call in uv_runs.call_args_list if "pip" in call.args[0]]
+    assert installed and "cowsay" in installed[0]
+
+
 def test_find_uv_looks_where_the_installer_puts_it(monkeypatch, tmp_path: Path) -> None:
     """Tasks run under a service PATH with no ~/.local/bin. Trusting PATH alone
     reported a working uv as missing and reinstalled it on every task."""

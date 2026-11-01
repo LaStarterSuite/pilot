@@ -93,6 +93,7 @@ Site behavior belongs on `Site` or a module under `pilot/core/site`.
 ## Setup Commands
 
 - `pilot setup requirements`: install Python and JS requirements.
+- `pilot setup envs`: recreate the admin and bench virtualenvs with the current Python, after an OS upgrade.
 - `pilot setup config`: regenerate config files from `bench.toml`.
 - `pilot setup nginx`: render nginx config.
 - `pilot setup letsencrypt`: issue or refresh TLS certificates.
@@ -105,6 +106,10 @@ Site behavior belongs on `Site` or a module under `pilot/core/site`.
 `pilot setup central` writes the shared `[central]` settings: it enables Central management and, given `--admin-pattern` or `--site-pattern`, aliases those VM hostname globs to this bench's admin domain and its site. Central manages a host holding one bench, so the command refuses a second one rather than guess which bench a VM hostname belongs to, and `--site-pattern` aliases the bench's only site, skipping the alias while the bench has no site and refusing to guess when it has more than one. The credential itself is never passed in - it arrives through instance metadata, and `--rebootstrap` asks for it to be applied again. Because the bootstrap unit is written only while Central is enabled, the command rebuilds the process set of a bench already in production, restarting its workload.
 
 Production setup uses the bench config and system managers. The command should not duplicate nginx, process manager, or certificate logic.
+
+### After an OS Upgrade
+
+A major OS upgrade replaces the system Python and breaks Pilot's virtualenvs. Take backups of your sites first, then run `pilot setup envs`: it deletes and rebuilds the admin environment (`.admin-venv`) with the `admin` extras, and every bench's `env` with its apps installed, using the current system Python. Sites, `common_site_config.json`, and the bench and admin config are left untouched. Pass `-b NAME` to rebuild a single bench's environment. The command asks for confirmation; `pilot --yes` skips it. Restart the admin service and the benches afterwards so running processes pick up the new environments.
 
 ## Process Commands
 
