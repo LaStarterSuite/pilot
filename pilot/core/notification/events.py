@@ -11,6 +11,7 @@ import typing
 from pathlib import Path
 
 from pilot.core.notification import NotificationStore
+from pilot.internal.jsonl_log import utc_now
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -51,6 +52,20 @@ _UNREPORTED_COMMANDS = frozenset(
     }
 )
 
+# Commands long enough that whoever queued them has walked away by the time they
+# end: these also raise a success event, so "it finished" reaches a user who is
+# not looking at the dashboard.
+_SUCCESS_COMMANDS = frozenset({"migrate", "restore-site", "update"})
+
+
+def report_task_result(bench_root: Path, meta: dict, status: str) -> None:
+    """Record a finished task. Called from the task wrapper with "failed" or
+    "success"; failures of noisy commands and successes of quick ones stay out."""
+    if status == "failed":
+        task_failed(bench_root, meta)
+    elif status == "success":
+        task_succeeded(bench_root, meta)
+
 
 def task_failed(bench_root: Path, meta: dict) -> None:
     """Record a failed task. Called from the task wrapper, so it runs in the child
@@ -61,19 +76,73 @@ def task_failed(bench_root: Path, meta: dict) -> None:
 
     task_id = str(meta.get("task_id") or "")
     site = (meta.get("args") or {}).get("site")
+    title = f"{_readable(command)} failed"
     try:
         NotificationStore(Path(bench_root) / "logs").create(
-            f"{_readable(command)} failed",
+            title,
             category=_CATEGORY_BY_COMMAND.get(command, "Tasks"),
             event="task_failed",
             severity="Error",
-            message=f"{site}: see the task log for the failure." if site else "See the task log for the failure.",
+            message=f"{site}: see the task log for the failure."
+            if site
+            else "See the task log for the failure.",
             site=site,
             task_id=task_id or None,
             action_route=f"/insights/tasks/{task_id}" if task_id else None,
         )
     except Exception as exc:
         logging.warning("Notification skipped for failed task %s: %s", task_id, exc)
+
+    _fan_out_to_sinks(Path(bench_root), "task_failed", title, site, task_id or None)
+
+
+def task_succeeded(bench_root: Path, meta: dict) -> None:
+    """Record a finished long-running task. Called from the task wrapper, so it
+    runs in the child process after the task has already been marked successful."""
+    command = str(meta.get("command") or "")
+    if command not in _SUCCESS_COMMANDS:
+        return
+
+    task_id = str(meta.get("task_id") or "")
+    site = (meta.get("args") or {}).get("site")
+    title = f"{_readable(command)} finished"
+    try:
+        NotificationStore(Path(bench_root) / "logs").create(
+            title,
+            category=_CATEGORY_BY_COMMAND.get(command, "Tasks"),
+            event="task_succeeded",
+            severity="Info",
+            message=f"{site}: the command finished successfully."
+            if site
+            else "The command finished successfully.",
+            site=site,
+            task_id=task_id or None,
+            action_route=f"/insights/tasks/{task_id}" if task_id else None,
+        )
+    except Exception as exc:
+        logging.warning("Notification skipped for finished task %s: %s", task_id, exc)
+
+    _fan_out_to_sinks(Path(bench_root), "task_succeeded", title, site, task_id or None)
+
+
+def _fan_out_to_sinks(bench_root: Path, event: str, title: str, site: str, task_id: str | None) -> None:
+    """Copy one task event to the alert sinks - the same webhook, mail and Central
+    fan-out the monitoring alerts take, so it reaches a user who is not looking at
+    the feed. Best-effort: this runs in the task wrapper's child process, where a
+    missing or half-configured bench only skips the delivery."""
+    try:
+        from pilot.core.alerts import notify
+        from pilot.core.bench import Bench
+
+        bench = Bench(bench_root)
+        payload = {
+            "event": event,
+            "message": f"{title} on {site}" if site else title,
+            "context": {"bench": bench.config.name, "time": utc_now(), "site": site, "task_id": task_id},
+        }
+        notify(bench, payload)
+    except Exception as exc:
+        logging.warning("Sink delivery skipped for %s: %s", event, exc)
 
 
 def record_alert(
@@ -121,6 +190,25 @@ def backups_failing(bench: "Bench", site: str, failures: int) -> None:
         )
     except Exception as exc:
         logging.warning("Notification skipped for failing backups of %s: %s", site, exc)
+
+    try:
+        from pilot.core.alerts import notify
+
+        notify(
+            bench,
+            {
+                "event": "backups_failing",
+                "message": f"Backups of {site} are failing: {failures} backup attempts failed since the last successful backup.",
+                "context": {
+                    "bench": bench.config.name,
+                    "time": utc_now(),
+                    "site": site,
+                    "failures": failures,
+                },
+            },
+        )
+    except Exception as exc:
+        logging.warning("Sink delivery skipped for failing backups of %s: %s", site, exc)
 
 
 def _readable(command: str) -> str:
