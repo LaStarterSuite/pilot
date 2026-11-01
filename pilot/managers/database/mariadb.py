@@ -191,7 +191,6 @@ class MariaDBManager(UserOwnedDBManager):
             f"key-buffer-size = {sizing.key_buffer_mb}M\n"
             f"aria-pagecache-buffer-size = {sizing.aria_pagecache_mb}M\n"
             f"max-connections = {sizing.max_connections}\n"
-            "slave-connections-needed-for-purge = 0\n"
             "tmp-table-size = 32M\n"
             "max-heap-table-size = 32M\n"
             "\n"

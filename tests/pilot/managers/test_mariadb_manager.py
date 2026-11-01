@@ -245,7 +245,7 @@ def test_write_config_contains_all_server_settings(tmp_path) -> None:
     assert "local-infile = OFF" in content
     assert "innodb-stats-persistent-sample-pages = 256" in content
     assert "innodb-snapshot-isolation = OFF" in content
-    assert "slave-connections-needed-for-purge = 0" in content
+    assert "slave-connections-needed-for-purge" not in content
     assert f"innodb-buffer-pool-size = {sizing.innodb_buffer_pool_mb}M" in content
     assert "innodb-buffer-pool-size-max = 2216M" in content
     assert "innodb-buffer-pool-size-auto-min = 640M" in content
