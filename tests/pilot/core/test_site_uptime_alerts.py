@@ -1,6 +1,10 @@
 """Tests for the site-down incident alerts raised by the uptime monitor."""
 
 import json
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -211,24 +215,75 @@ def test_a_second_site_going_down_gets_its_own_record(tmp_path: Path) -> None:
     assert titles == ["a.test is unreachable", "b.test is unreachable"]
 
 
-def test_a_ping_without_an_http_answer_keeps_its_reason(tmp_path: Path) -> None:
-    import urllib.error
+class _AppServer(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        self.server.requests.append(self.headers["X-Frappe-Site-Name"])
+        self.send_response(self.server.status)
+        self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/redirected")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
-    reason = "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"
-    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError(reason)):
-        result = _monitor(tmp_path).ping_site("a.test")
+    def log_message(self, *args) -> None:
+        pass
+
+
+@contextmanager
+def _app_server(monitor: UptimeMonitor, status: int) -> Iterator[ThreadingHTTPServer]:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _AppServer)
+    server.status, server.requests = status, []
+    monitor.bench.config.http_port = server.server_port
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_a_ping_reaches_the_site_on_the_local_app_server(tmp_path: Path) -> None:
+    monitor = _monitor(tmp_path)
+    with _app_server(monitor, 200) as server:
+        result = monitor.ping_site("a.test")
+
+    assert server.requests == ["a.test"]
+    assert result["up"] is True
+
+
+def test_a_ping_does_not_follow_a_redirect(tmp_path: Path) -> None:
+    monitor = _monitor(tmp_path)
+    with _app_server(monitor, 301) as server:
+        result = monitor.ping_site("a.test")
+
+    assert server.requests == ["a.test"]
+    assert result["up"] is False
+    assert result["status_code"] == 301
+
+
+def test_a_ping_ignores_a_proxy_in_the_environment(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
+    monitor = _monitor(tmp_path)
+    with _app_server(monitor, 200):
+        assert monitor.ping_site("a.test")["up"] is True
+
+
+def test_a_ping_without_an_http_answer_keeps_its_reason(tmp_path: Path) -> None:
+    monitor = _monitor(tmp_path)
+    with _app_server(monitor, 200):
+        pass
+
+    result = monitor.ping_site("a.test")
 
     assert result["up"] is False
     assert result["status_code"] is None
-    assert result["error"] == reason
+    assert "refused" in result["error"].lower()
 
 
 def test_an_http_failure_has_no_extra_error_field(tmp_path: Path) -> None:
-    import urllib.error
-
-    failure = urllib.error.HTTPError("https://a.test/api/method/ping", 502, "Bad Gateway", {}, None)
-    with patch("urllib.request.urlopen", side_effect=failure):
-        result = _monitor(tmp_path).ping_site("a.test")
+    monitor = _monitor(tmp_path)
+    with _app_server(monitor, 502):
+        result = monitor.ping_site("a.test")
 
     assert result["status_code"] == 502
     assert "error" not in result

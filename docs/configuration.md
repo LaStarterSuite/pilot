@@ -293,7 +293,7 @@ The monitor checks this section on every run, so both shippers start when a cred
 
 ### Alert Delivery
 
-`[resource_limits]` sets when an alert is raised and where it goes. A usage percentage of `0` disables that alert; `site_uptime` covers sites that stop answering their ping. A condition must hold for five minutes before anything is sent.
+`[resource_limits]` sets when an alert is raised and where it goes. A usage percentage of `0` disables that alert; `site_uptime` covers sites that stop answering their ping. Pilot sends the ping to the bench's local app server, so a failure in nginx, TLS, DNS, or the edge proxy does not raise this alert. A condition must hold for five minutes before anything is sent.
 
 Where an alert goes depends on what is configured. A Central-managed host reports every alert to Central; a self-hosted one does not, and the dashboard drops the Central wording along with it. Each entry in `webhook_endpoints` receives alerts either way, as a POST with an `Authorization: Bearer` header. Mail is a third sink, off until a mail server is configured and `email_recipients` is set.
 
