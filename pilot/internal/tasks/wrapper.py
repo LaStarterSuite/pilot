@@ -211,9 +211,9 @@ def _run_task() -> None:
 
     status = _finalize_task(store, task_id, exit_code)
     if status in (TaskStatus.FAILED, TaskStatus.SUCCESS):
-        from pilot.core.notification import events
+        from pilot.core.notification.events import task_failed, task_succeeded
 
-        events.report_task_result(bench_root, meta, status=status)
+        (task_failed if status == TaskStatus.FAILED else task_succeeded)(bench_root, meta)
 
     trigger = trigger_for_task_status(status)
     selected = callbacks.get(trigger)
